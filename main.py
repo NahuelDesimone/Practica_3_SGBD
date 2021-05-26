@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from shapely.geometry import Point
 from geopandas import GeoSeries, GeoDataFrame
 import pandas as pd
+import math
+
 
 def config(filename='database.ini', section='postgresql'):
     # create a parser
@@ -20,32 +22,35 @@ def config(filename='database.ini', section='postgresql'):
         for param in params:
             db[param[0]] = param[1]
     else:
-        raise Exception('Section {0} not found in the {1} file'.format(section, filename))
+        raise Exception(
+            'Section {0} not found in the {1} file'.format(section, filename))
 
     return db
+
 
 def abrirBaseDeDatos():
     conn = None
     params = config()
-            # connect to the PostgreSQL database
+    # connect to the PostgreSQL database
     conn = psycopg2.connect(**params)
     return conn
+
 
 def cargar(sql):
 
     conn = None
     try:
         conn = abrirBaseDeDatos()
-            # create a new cursor
+        # create a new cursor
         cur = conn.cursor()
-            # execute the INSERT statement
+        # execute the INSERT statement
         cur.execute(sql)
 
         row = cur.fetchone()
         diccionario = {}
         while row is not None:
             clave = row[0]
-            valor = row[1] 
+            valor = row[1]
 
             diccionario[clave] = valor
             row = cur.fetchone()
@@ -71,7 +76,7 @@ def procesarArchivoCsv():
     for elem in datos:
         id = elem[0]
         dominio = elem[1]
-    
+
         lista = dominio.split('.')
 
         entidad = lista[0]
@@ -99,7 +104,7 @@ def procesarArchivoCsv():
             tipoEntidad = ultimoValor
 
         if(len(lista) == 2 and tipoEntidad == ""):
-            tipoEntidad =lista[1]
+            tipoEntidad = lista[1]
 
         if(len(lista) == 1 and countryCode == ""):
             codigoPais = "US"
@@ -114,15 +119,15 @@ def procesarArchivoCsv():
     if conn is not None:
         conn.close()
 
-	
-def insert_sitio(id,entidad, tipoEntidad,codigoPais,countryCode, conn):
+
+def insert_sitio(id, entidad, tipoEntidad, codigoPais, countryCode, conn):
 
     sql = "INSERT INTO sitio (id,entidad,tipo_entidad,pais,countrycode) VALUES(%s,%s,%s,%s,%s)"
     try:
         # create a new cursor
         cur = conn.cursor()
         # execute the INSERT statement
-        cur.execute(sql, (id,entidad, tipoEntidad,codigoPais,countryCode))
+        cur.execute(sql, (id, entidad, tipoEntidad, codigoPais, countryCode))
 
         # commit the changes to the database
         conn.commit()
@@ -132,69 +137,26 @@ def insert_sitio(id,entidad, tipoEntidad,codigoPais,countryCode, conn):
         print(error)
 
 
+def graficar(sql, columnaDf):
+    dic = cargar(sql)
+    world = GeoDataFrame.from_file('ne_10m_admin_0_countries.shp').sort_values('ISO_A3').set_index('ISO_A3')
+    listaCodigosDf = world.index.tolist()
+    listaCodigosDic = list(dic.keys())
 
-def graficoPoblacion ():
-    #QUERY
-    sql = "select name,population from country order by name"
-    dicPoblacion = cargar(sql)
-    world = GeoDataFrame.from_file('ne_10m_admin_0_countries.shp').sort_values('NAME').set_index('NAME')
- 
-    listaPaisesDf = world.index.tolist()
-    listaPaisesDic = list(dicPoblacion.keys())
-
-    for pais in listaPaisesDf:
-        if (pais in listaPaisesDic):
-            world.at[pais,'POPULATION'] = dicPoblacion[pais]
+    for code in listaCodigosDf:
+        if ((code in listaCodigosDic) and (dic[code] > 0)):
+            world.at[code, columnaDf] = math.log2(float(dic[code]))
         else:
-            world.at[pais,'POPULATION'] = 0
+            world.at[code, columnaDf] = 0
 
+    world.plot(column=columnaDf, colormap='Reds', alpha=1,
+               categorical=False, legend=True, axes=None)
 
-
-    # para ver los colormap, ejecutar colors.py
-    world.plot(column='POPULATION', colormap='Reds', alpha=1, categorical=False, legend=True, axes=None)
-    #orld.plot(column='prueba', colormap='binary', alpha=0.5, categorical=False, legend=False, axes=None)
+    plt.title(columnaDf)
     plt.show()
 
-def graficoPBI ():
-    #QUERY
-    sql = "select name,gnp from country order by name"
-    dicPBI = cargar(sql)
-    world = GeoDataFrame.from_file('ne_10m_admin_0_countries.shp').sort_values('NAME').set_index('NAME')
- 
-    listaPaisesDf = world.index.tolist()
-    listaPaisesDic = list(dicPBI.keys())
+# procesarArchivoCsv()
+graficar("select code,population from country order by code","POPULATION")
+graficar("select code,gnp from country order by code","PBI")
+graficar("select c.code,count(*) from sitio s inner join country c on s.countrycode = c.code group by c.code","SITIOS")
 
-    for pais in listaPaisesDf:
-        if (pais in listaPaisesDic):
-            world.at[pais,'PBI'] = dicPBI[pais]
-        else:
-            world.at[pais,'PBI'] = 0
-
-    # para ver los colormap, ejecutar colors.py
-    world.plot(column='PBI', colormap='Greens', alpha=1, categorical=False, legend=False, axes=None)
-    plt.show()
-
-def graficoSitios():
-    #QUERY
-    sql = "select c.name,count(*) from sitio s inner join country c on s.countrycode = c.code group by c.name"
-    dicSitios = cargar(sql)
-    world = GeoDataFrame.from_file('ne_10m_admin_0_countries.shp').sort_values('NAME').set_index('NAME')
- 
-    listaPaisesDf = world.index.tolist()
-    listaPaisesDic = list(dicSitios.keys())
-
-    for pais in listaPaisesDf:
-        if (pais in listaPaisesDic):
-            world.at[pais,'SITIOS'] = dicSitios[pais]
-        else:
-            world.at[pais,'SITIOS'] = 0
-
-    # para ver los colormap, ejecutar colors.py
-    world.plot(column='SITIOS', colormap='Reds', alpha=1, categorical=False, legend=True, axes=None)
-    plt.show()
-
-
-#procesarArchivoCsv()
-graficoPoblacion()
-graficoPBI()
-graficoSitios()
