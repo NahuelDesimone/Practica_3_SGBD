@@ -155,6 +155,7 @@ def graficar(sql, columnaDf):
     plt.title(columnaDf)
     plt.show()
 
+
 # procesarArchivoCsv()
 graficar("select code,population from country order by code","POPULATION")
 graficar("select code,gnp from country order by code","PBI")
